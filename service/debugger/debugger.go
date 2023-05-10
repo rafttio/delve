@@ -139,6 +139,10 @@ type Config struct {
 	// Redirects specifies redirect rules for stdin, stdout and stderr
 	Redirects [3]string
 
+	// Writers written which are used instead of Redirects, in case the caller desires to do so
+	CaptureStdout io.Writer
+	CaptureStderr io.Writer
+
 	// DisableASLR disables ASLR
 	DisableASLR bool
 

@@ -805,6 +805,22 @@ func (s *Session) logToConsole(msg string) {
 		}})
 }
 
+type debugConsoleLogger struct {
+	session  *Session
+	category string
+}
+
+func (l *debugConsoleLogger) Write(p []byte) (int, error) {
+	l.session.send(&dap.OutputEvent{
+		Event: *newEvent("output"),
+		Body: dap.OutputEventBody{
+			Output:   string(p),
+			Category: l.category,
+		},
+	})
+	return len(p), nil
+}
+
 func (s *Session) onInitializeRequest(request *dap.InitializeRequest) {
 	s.setClientCapabilities(request.Arguments)
 	if request.Arguments.PathFormat != "path" {
@@ -1028,6 +1044,12 @@ func (s *Session) onLaunchRequest(request *dap.LaunchRequest) {
 	if args.NoDebug {
 		s.mu.Lock()
 		cmd, err := s.newNoDebugProcess(debugbinary, args.Args, s.config.Debugger.WorkingDir)
+		if args.Console == "internalConsole" {
+			cmd.Stdout, cmd.Stderr = &debugConsoleLogger{session: s, category: "stdout"}, &debugConsoleLogger{session: s, category: "stderr"}
+		}
+		if err == nil {
+			err = cmd.Start()
+		}
 		s.mu.Unlock()
 		if err != nil {
 			s.sendShowUserErrorResponse(request.Request, FailedToLaunch, "Failed to launch", err.Error())
@@ -1048,6 +1070,32 @@ func (s *Session) onLaunchRequest(request *dap.LaunchRequest) {
 		}()
 		return
 	}
+
+	func() {
+		if args.Console == "internalConsole" && runtime.GOOS == "linux" && (args.Backend == "default" || args.Backend == "native") {
+			redirects, err := generateStdioTempPipes()
+			if err != nil {
+				return
+			}
+			s.config.Debugger.Redirects[1] = redirects[0]
+			s.config.Debugger.Redirects[2] = redirects[1]
+
+			stdoutWriter := &debugConsoleLogger{session: s, category: "stdout"}
+			stderrWriter := &debugConsoleLogger{session: s, category: "stderr"}
+			f := func(pipePath string, w io.Writer) {
+				// Blocking until read side of the pipe succeeds, and then delete file
+				pipe, err := os.Open(pipePath)
+				os.Remove(pipePath)
+				if err != nil {
+					return
+				}
+				defer pipe.Close()
+				io.Copy(w, pipe)
+			}
+			go f(redirects[0], stdoutWriter)
+			go f(redirects[1], stderrWriter)
+		}
+	}()
 
 	func() {
 		s.mu.Lock()
