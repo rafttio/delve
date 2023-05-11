@@ -7,7 +7,7 @@ check-cert:
 	@go run _scripts/make.go check-cert
 
 build: $(GO_SRC)
-	@go run _scripts/make.go build
+	@go run _scripts/make.go build $(BUILD_ARGS)
 
 install: $(GO_SRC)
 	@go run _scripts/make.go install
