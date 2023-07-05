@@ -1048,7 +1048,9 @@ func (s *Session) onLaunchRequest(request *dap.LaunchRequest) {
 			cmd.Stdout, cmd.Stderr = &debugConsoleLogger{session: s, category: "stdout"}, &debugConsoleLogger{session: s, category: "stderr"}
 		}
 		if err == nil {
-			err = cmd.Start()
+			if err = cmd.Start(); err != nil {
+				s.noDebugProcess = nil
+			}
 		}
 		s.mu.Unlock()
 		if err != nil {
@@ -1136,9 +1138,6 @@ func (s *Session) newNoDebugProcess(program string, targetArgs []string, wd stri
 	}
 	cmd := exec.Command(program, targetArgs...)
 	cmd.Stdout, cmd.Stderr, cmd.Stdin, cmd.Dir = os.Stdout, os.Stderr, os.Stdin, wd
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
 	s.noDebugProcess = &process{Cmd: cmd, exited: make(chan struct{})}
 	return cmd, nil
 }
